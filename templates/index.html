@@ -32,10 +32,6 @@
           <div class="form-card">
             <label for="city">Lebanese city</label>
             <select id="city"></select>
-            <div class="checkbox-row">
-              <input type="checkbox" id="use_custom" />
-              <label for="use_custom">Use custom coordinates</label>
-            </div>
             <div id="custom_coords" style="display: none">
               <div class="coord-grid">
                 <div>
@@ -816,7 +812,6 @@
                 body: JSON.stringify({
                   city,
                   species,
-                  use_custom_coordinates: false,
                 }),
               })
                 .then((r) => r.json())
@@ -1019,10 +1014,6 @@
       /* ══════════════════════════════════════════════════════
          EVENT LISTENERS
       ══════════════════════════════════════════════════════ */
-      document.getElementById("use_custom").addEventListener("change", () => {
-        document.getElementById("custom_coords").style.display =
-          document.getElementById("use_custom").checked ? "block" : "none";
-      });
       document
         .getElementById("species")
         .addEventListener("change", (e) => updatePhotoCard(e.target.value));
@@ -1037,18 +1028,10 @@
             out = document.getElementById("pred-result");
           err.style.display = "none";
           out.innerHTML = "";
-          const useCustom = document.getElementById("use_custom").checked;
           const speciesName = document.getElementById("species").value;
           const body = {
             city: document.getElementById("city").value,
             species: speciesName,
-            use_custom_coordinates: useCustom,
-            latitude: useCustom
-              ? parseFloat(document.getElementById("lat").value)
-              : null,
-            longitude: useCustom
-              ? parseFloat(document.getElementById("lon").value)
-              : null,
           };
           if (body.latitude !== null && Number.isNaN(body.latitude))
             delete body.latitude;

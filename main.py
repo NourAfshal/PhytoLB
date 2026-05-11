@@ -45,7 +45,6 @@ class PredictRequest(PathsBody):
     city: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    use_custom_coordinates: bool = False
     species: str = Field(..., min_length=1)
 
 
@@ -71,12 +70,9 @@ def _effective_paths(settings: Settings, override: PathsOverride | None) -> tupl
 
 def _resolve_lon_lat(
     city: str | None,
-    use_custom: bool,
     latitude: float | None,
     longitude: float | None,
 ) -> tuple[float, float, str]:
-    if use_custom and latitude is not None and longitude is not None:
-        return float(longitude), float(latitude), f"custom ({latitude:.4f}, {longitude:.4f})"
     if city and city in LEBANESE_CITIES:
         lat, lon = LEBANESE_CITIES[city]
         return lon, lat, city
@@ -84,7 +80,7 @@ def _resolve_lon_lat(
         raise HTTPException(status_code=400, detail=f"Unknown city: {city!r}.")
     raise HTTPException(
         status_code=400,
-        detail="Provide either a known ``city``, or ``use_custom_coordinates`` with ``latitude`` and ``longitude``.",
+        detail="Provide either a known ``city``",
     )
 
 
@@ -188,7 +184,6 @@ async def predict(req: PredictRequest) -> dict:
 
     lon, lat, label_used = _resolve_lon_lat(
         req.city,
-        req.use_custom_coordinates,
         req.latitude,
         req.longitude,
     )
