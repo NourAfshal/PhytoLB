@@ -1,173 +1,121 @@
-# EmoFlow: Modeling Dynamic Emotion Transitions in Conversations
+# PhytoLB
 
-## 📌 Overview
+Plant suitability predictions for Lebanese locations using a trained **LightGBM** classifier, **WorldClim** BIO1–BIO19 rasters, and an **elevation** GeoTIFF. The app uses **FastAPI** for HTTP APIs and serves a browser UI (templates + Plotly JS). It loads saved artifacts only (no training in the app).
 
-Human conversations are dynamic — emotions constantly evolve as people interact. A person may begin a discussion feeling calm, become excited, shift to frustration, and eventually feel relief. However, most existing emotion detection systems treat each message independently, ignoring the conversational context that shapes emotional transitions.
+## Requirements
 
-**EmoFlow** addresses this limitation by modeling how emotions change over time within conversations. Instead of simply predicting the emotion of a single message, our goal is to **predict the next emotion based on the full conversation history**.
+- Python 3.10+ recommended
+- Trained artifacts in `models/` (see below)
+- GeoTIFFs for WorldClim BIO1–BIO19 and `elevation.tif` in configurable folders
 
----
+## Setup
 
-## 🎯 Objective
+Create a virtual environment (ignored by git) and install dependencies:
 
-The main objective of this project is to:
-
-* Track emotional progression in conversations
-* Model transitions between emotions
-* Predict the next emotion in a dialogue sequence
-
----
-
-## 📊 Dataset
-
-We use the **GoEmotions dataset** (Demszky et al., 2020), developed by Google Research.
-
-* ~58,000 Reddit comments
-* 27 fine-grained emotion labels + neutral
-* Includes emotions such as:
-
-  * admiration
-  * curiosity
-  * excitement
-  * grief
-  * nervousness
-
-Unlike traditional datasets with only a few basic emotions, GoEmotions provides a **rich and realistic representation of human feelings**. Additionally, since the data comes from Reddit threads, we can reconstruct full conversations and analyze emotional flow.
-
----
-
-## ⚙️ Methodology
-
-### 1. Conversation Reconstruction
-
-* Extract Reddit threads from the dataset
-* Rebuild conversations using parent-child relationships
-* Represent each conversation as a sequence of messages with emotion labels
-
----
-
-### 2. Emotion Transition Modeling
-
-#### 🔹 Markov Chain (Baseline)
-
-* Models probability of transitioning from one emotion to another:
-
-  ```
-  P(next_emotion | current_emotion)
-  ```
-* Simple and interpretable
-* Captures basic emotional patterns
-
-#### 🔹 LSTM Neural Network (Advanced)
-
-* Uses sequential learning to capture long-term dependencies
-* Input: sequence of previous emotions or text
-* Output: predicted next emotion
-* Handles complex conversational context
-
----
-
-### 3. Emotion Flow Visualization
-
-We create visual representations of emotional evolution:
-
-* Timeline charts of conversations
-* Emotion transition heatmaps
-* Flow diagrams showing mood shifts
-
-These visualizations help uncover patterns such as:
-
-* Escalation to conflict
-* Emotional recovery
-* Stable vs volatile discussions
-
----
-
-## 📈 Evaluation
-
-We evaluate models using:
-
-* Accuracy
-* Top-k accuracy
-* Comparison between Markov and LSTM performance
-
-Key questions:
-
-* Are emotional transitions predictable?
-* Does context improve prediction?
-* Which emotions lead to conflict or resolution?
-
----
-
-## 💡 Applications
-
-EmoFlow has several real-world applications:
-
-* 🤖 Emotion-aware chatbots
-* ⚠️ Early conflict detection in conversations
-* 💬 Customer service sentiment monitoring
-* 🧠 Mental health pattern analysis in online communities
-
----
-
-## 📁 Project Structure
-
-```
-EmoFlow/
-│
-├── data/
-│   ├── raw/
-│   ├── processed/
-│
-├── notebooks/
-│   ├── 1_EDA.ipynb
-│   ├── 2_markov_model.ipynb
-│   ├── 3_lstm_model.ipynb
-│
-├── src/
-│   ├── preprocessing.py
-│   ├── conversation_builder.py
-│   ├── markov_model.py
-│   ├── lstm_model.py
-│   ├── visualization.py
-│
-├── results/
-│   ├── plots/
-│   ├── metrics/
-│
-├── README.md
-├── requirements.txt
-└── main.py
+```bash
+python -m venv venv
 ```
 
----
+**Windows (PowerShell):**
 
-## 🚀 How to Run
-
-1. Install dependencies:
-
-```
+```powershell
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-2. Run the project:
+**macOS / Linux:**
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Windows: LightGBM / `lib_lightgbm.dll`
+
+If you see **Could not find module** … `lib_lightgbm.dll` **(or one of its dependencies)**:
+
+- The DLL from `pip install lightgbm` is often present, but a **system dependency** is missing—commonly **OpenMP** via **`vcomp140.dll`**, which ships with the **Microsoft Visual C++ Redistributable (x64)**.
+- **Install (pick one):**
+  - Download and run: [VC_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe) ([Microsoft docs](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)).
+  - Or in PowerShell (may prompt for admin):  
+    `winget install Microsoft.VCRedist.2015+.x64 --source winget`
+- Restart the terminal, activate `venv` again, then start the API (below).
+
+Optional: use **Conda** (`conda install -c conda-forge lightgbm`) if pip + VC redist still misbehaves on your machine.
+
+Your raster **data paths** are unrelated to this error—the failure happens when Python first loads the LightGBM native library during `joblib.load` of the pickled model.
+
+## Run the server
+
+From the project root:
+
+```powershell
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then open **http://127.0.0.1:8000** for the UI, or **http://127.0.0.1:8000/docs** for OpenAPI (“Swagger”) documentation.
+
+### Default folders (environment variables)
+
+| Variable | Default |
+|----------|---------|
+| `PHYTO_MODELS_DIR` | `<project>/models` |
+| `PHYTO_WORLDCLIM_DIR` | `<project>/data/worldclim` |
+| `PHYTO_ELEVATION_DIR` | `<project>/data/elevation` |
+
+You can override these per request via the **`paths`** object in POST bodies (see `/docs`). The web form submits the folders you enter in the inputs.
+
+### API endpoints (summary)
+
+- `GET /` — Browser UI  
+- `GET /api/meta` — Cities list, species list, defaults, BIO raster count, model-load status  
+- `GET /api/cities` — City → lat/lon  
+- `POST /api/raster-status` — Count BIO rasters given optional path overrides  
+- `POST /api/predict` — Single suitability prediction  
+- `POST /api/compare` — Table + chart payload for one city × all species  
+
+## Model artifacts
+
+Place these files under your model directory (default: `models/`):
+
+| File | Role |
+|------|------|
+| `phyto_lightgbm_model.pkl` | Trained `LGBMClassifier` |
+| `species_encoder.pkl` | Sklearn-style encoder with `classes_` (e.g. `LabelEncoder`) |
+| `imputer.pkl` | Fitted `SimpleImputer` (or compatible) |
+| `feature_names.pkl` | `list[str]` — exact column order for prediction |
+
+Engineered features are computed when their names appear in `feature_names.pkl`; base rasters supply BIO1–BIO19 and elevation, and the selected species is encoded as `species_id` when that column is listed.
+
+## Data layout
+
+- **WorldClim:** one GeoTIFF per BIO variable. Names like `wc2.1_30s_bio_1.tif` or `BIO12.tif` are detected automatically under the chosen folder (including subfolders).
+- **Elevation:** a file whose stem is `elevation` (e.g. `elevation.tif`) under the elevation folder.
+
+## Project layout
 
 ```
-python main.py
+PhytoLB/
+├── main.py                # FastAPI app + routes
+├── config.py              # Env-based default paths
+├── requirements.txt
+├── templates/
+│   └── index.html         # Web UI
+├── static/
+│   └── style.css
+├── models/                # Trained artifacts (you provide)
+├── data/
+│   ├── worldclim/         # BIO1–BIO19 GeoTIFFs (you provide)
+│   └── elevation/         # elevation.tif (you provide)
+└── utils/
+    ├── bundle_cache.py    # Cached joblib bundle per models_dir
+    ├── constants.py       # Lebanese city presets
+    ├── model_loader.py    # joblib loads
+    ├── windows_lightgbm.py # Windows DLL path + import check
+    ├── environment.py     # raster discovery + sampling
+    └── prediction.py      # features, imputer, predict_proba, labels
 ```
 
----
+## License
 
-## 📚 Reference
-
-Demszky, D., Movshovitz-Attias, D., Ko, J., Cowen, A., Nemade, G., & Ravi, S. (2020).
-*GoEmotions: A Dataset of Fine-Grained Emotions.*
-Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics.
-
----
-
-## 🧠 Key Insight
-
-> Emotions are not isolated — they evolve. EmoFlow captures this evolution to better understand human communication.
-
----
+Add your license here if applicable.

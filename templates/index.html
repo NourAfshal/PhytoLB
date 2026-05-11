@@ -1,0 +1,1225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PhytoLB — Plant suitability</title>
+    <link rel="icon" href="/static/favicon.png" type="image/png" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <!-- ── Header ──────────────────────────────────────── -->
+      <header>
+        <h1>PhytoLB</h1>
+        <p class="tag">
+          Plant suitability for Lebanon — LightGBM + WorldClim BIO1–BIO19 +
+          Elevation
+        </p>
+      </header>
+      <div class="status-bar" id="api-status">Connecting to model…</div>
+
+      <!-- ── Single Prediction ────────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-title">Single prediction</div>
+        <div class="prediction-grid">
+          <div class="form-card">
+            <label for="city">Lebanese city</label>
+            <select id="city"></select>
+            <div class="checkbox-row">
+              <input type="checkbox" id="use_custom" />
+              <label for="use_custom">Use custom coordinates</label>
+            </div>
+            <div id="custom_coords" style="display: none">
+              <div class="coord-grid">
+                <div>
+                  <label for="lat">Latitude</label
+                  ><input
+                    type="number"
+                    id="lat"
+                    step="any"
+                    placeholder="e.g. 33.88"
+                  />
+                </div>
+                <div>
+                  <label for="lon">Longitude</label
+                  ><input
+                    type="number"
+                    id="lon"
+                    step="any"
+                    placeholder="e.g. 35.50"
+                  />
+                </div>
+              </div>
+            </div>
+            <label for="species">Species</label>
+            <select id="species"></select>
+            <button type="button" class="btn btn-full" id="btn-predict">
+              Predict suitability
+            </button>
+            <div
+              id="pred-error"
+              class="alert-banner"
+              style="display: none"
+            ></div>
+          </div>
+          <div class="photo-card" id="photo-card">
+            <img
+              id="species-img"
+              src=""
+              alt=""
+              onerror="
+                this.style.display = 'none';
+                document.getElementById('photo-placeholder').style.display =
+                  'flex';
+              "
+            />
+            <div
+              class="photo-placeholder"
+              id="photo-placeholder"
+              style="display: none"
+            >
+              <div class="photo-placeholder-letter" id="ph-letter">—</div>
+              <div class="photo-placeholder-name" id="ph-name"></div>
+            </div>
+            <div class="photo-overlay">
+              <div class="photo-species" id="overlay-name">
+                Select a species
+              </div>
+              <div class="photo-family" id="overlay-family"></div>
+            </div>
+          </div>
+        </div>
+        <div id="pred-result"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ── Suitability Map ──────────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-title">Suitability map across Lebanon</div>
+        <div class="form-card" style="margin-bottom: 1.25rem">
+          <label for="map-species">Species</label>
+          <select id="map-species"></select>
+          <button type="button" class="btn" id="btn-map">
+            <span id="btn-map-text">Build suitability map</span>
+          </button>
+          <div
+            id="map-error"
+            class="alert-banner"
+            style="display: none; margin-top: 0.75rem"
+          ></div>
+        </div>
+        <div id="map-wrap" style="display: none">
+          <div id="leaflet-map"></div>
+          <div class="map-legend">
+            <span class="leg-dot" style="background: #2d7a4f"></span> Highly
+            suitable (≥0.65)
+            <span
+              class="leg-dot"
+              style="background: #c8892a; margin-left: 1rem"
+            ></span>
+            Moderate (0.35–0.65)
+            <span
+              class="leg-dot"
+              style="background: #b94040; margin-left: 1rem"
+            ></span>
+            Low (&lt;0.35)
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ── Compare All Species ──────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-title">Compare all species at one city</div>
+        <div class="form-card" style="margin-bottom: 1.5rem">
+          <label for="comp_city">City</label>
+          <select id="comp_city"></select>
+          <button type="button" class="btn" id="btn-compare">
+            Build table &amp; chart
+          </button>
+          <div
+            id="compare-error"
+            class="alert-banner"
+            style="display: none; margin-top: 0.75rem"
+          ></div>
+        </div>
+        <div id="top-bottom-wrap"></div>
+        <div id="compare-table-wrap"></div>
+        <div class="charts-grid" id="charts-grid" style="display: none">
+          <div id="chart-horiz"></div>
+          <div id="chart-donut"></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- ── Feature Importance ───────────────────────────── -->
+      <div class="section-wrap">
+        <div class="section-title">Model feature importance</div>
+        <div id="feat-imp-wrap">
+          <div id="chart-feat-imp"></div>
+        </div>
+      </div>
+
+      <!-- ── Modal ────────────────────────────────────────── -->
+      <div
+        id="species-modal-overlay"
+        onclick="closeModal()"
+        style="display: none"
+      ></div>
+      <div
+        id="species-modal"
+        style="display: none"
+        role="dialog"
+        aria-modal="true"
+      >
+        <button class="modal-close" onclick="closeModal()" aria-label="Close">
+          &times;
+        </button>
+        <div class="modal-photo-wrap">
+          <img
+            id="modal-img"
+            src=""
+            alt=""
+            onerror="
+              this.style.display = 'none';
+              document.getElementById('modal-ph').style.display = 'flex';
+            "
+          />
+          <div id="modal-ph" class="modal-ph" style="display: none">
+            <span id="modal-ph-letter"></span>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="modal-arabic" id="modal-arabic"></div>
+          <div class="modal-sci" id="modal-sci"></div>
+          <div class="modal-common" id="modal-common"></div>
+          <div class="modal-pills">
+            <span class="modal-pill" id="modal-family-pill"></span>
+          </div>
+          <p class="modal-habitat" id="modal-habitat"></p>
+          <a
+            class="modal-wiki-link"
+            id="modal-wiki"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            >View on Wikipedia ↗</a
+          >
+        </div>
+      </div>
+
+      <!-- ── Footer ───────────────────────────────────────── -->
+      <footer>
+        PhytoLB · FastAPI + LightGBM · WorldClim BIO1–BIO19 · API docs:
+        <a href="/docs">/docs</a>
+      </footer>
+    </div>
+
+    <script>
+      /* ══════════════════════════════════════════════════════
+         SPECIES METADATA
+      ══════════════════════════════════════════════════════ */
+      const SPECIES_META = {
+        "Abies cilicica": {
+          photo: "/static/species/abies_cilicica.jpg",
+          family: "Pinaceae",
+          common: "Cilician Fir",
+          arabic: "الشوح القيليقي",
+          habitat:
+            "High-altitude mountain forests (1,400–2,000 m). Prefers cool, moist slopes with deep soils. Found in the Anti-Lebanon and northern Lebanon ranges.",
+        },
+        "Acer hyrcanum tauricolum": {
+          photo: "/static/species/acer_hyrcanum_tauricolum.jpg",
+          family: "Sapindaceae",
+          common: "Taurus Maple",
+          arabic: "القيقب الهيركاني",
+          habitat:
+            "Mixed deciduous forests on rocky limestone slopes at mid to high elevations (800–1,800 m). Tolerates drought and poor soils.",
+        },
+        "Acer monspessulanum microphyllum": {
+          photo: "/static/species/acer_monspessulanum_microphyllum.jpg",
+          family: "Sapindaceae",
+          common: "Montpellier Maple",
+          arabic: "القيقب المونبلياني",
+          habitat:
+            "Garigue and open woodland on dry limestone hillsides, 400–1,400 m. One of the most drought-tolerant maples in the region.",
+        },
+        "Acer obtusifolium": {
+          photo: "/static/species/acer_obtusifolium.jpg",
+          family: "Sapindaceae",
+          common: "Syrian Maple",
+          arabic: "القيقب السوري",
+          habitat:
+            "Maquis and open oak woodland at 500–1,500 m. Endemic to the Eastern Mediterranean; often found alongside Quercus coccifera.",
+        },
+        "Amygdalus orientalis": {
+          photo: "/static/species/amygdalus_orientalis.jpg",
+          family: "Rosaceae",
+          common: "Oriental Almond",
+          arabic: "اللوز الشرقي",
+          habitat:
+            "Arid rocky slopes and steppe margins, 200–1,200 m. Extremely drought-tolerant; an important pioneer species on degraded land.",
+        },
+        "Arbutus andrachne": {
+          photo: "/static/species/arbutus_andrachne.jpg",
+          family: "Ericaceae",
+          common: "Eastern Strawberry Tree",
+          arabic: "القطلب الشرقي",
+          habitat:
+            "Mediterranean maquis and pine forest undergrowth, 0–1,200 m. Recognizable by its smooth reddish-orange peeling bark.",
+        },
+        "Cedrus libani": {
+          photo: "/static/species/cedrus_libani.jpg",
+          family: "Pinaceae",
+          common: "Cedar of Lebanon",
+          arabic: "أرز لبنان",
+          habitat:
+            "High mountain forests (1,300–2,000 m). National symbol of Lebanon. Main stands remain in Bcharre and the Shouf Biosphere Reserve.",
+        },
+        "Ceratonia siliqua": {
+          photo: "/static/species/ceratonia_siliqua.jpg",
+          family: "Fabaceae",
+          common: "Carob",
+          arabic: "الخروب",
+          habitat:
+            "Coastal and sub-coastal maquis, 0–700 m. Highly adapted to hot, dry Mediterranean summers. Pods are edible and historically important.",
+        },
+        "Cercis siliquastrum": {
+          photo: "/static/species/cercis_siliquastrum.jpg",
+          family: "Fabaceae",
+          common: "Judas Tree",
+          arabic: "شجرة يهوذا",
+          habitat:
+            "Rocky slopes and woodland edges, 300–1,200 m. Spring-blooming with vivid pink flowers on branches. Common in Lebanese mountain villages.",
+        },
+        "Crataegus azarolus": {
+          photo: "/static/species/crataegus_azarolus.jpg",
+          family: "Rosaceae",
+          common: "Azarole",
+          arabic: "الزعرور العسلي",
+          habitat:
+            "Garrigue, maquis, and forest margins at 400–1,600 m. Edible red or yellow fruits used in Lebanese jams and traditional medicine.",
+        },
+        "Cupressus sempervirens": {
+          photo: "/static/species/cupressus_sempervirens.jpg",
+          family: "Cupressaceae",
+          common: "Italian Cypress",
+          arabic: "السرو الأبدي",
+          habitat:
+            "Planted widely across Lebanon from coast to 1,500 m; naturalized in some areas. Tolerates drought and poor soils.",
+        },
+        "Fraxinus ornus": {
+          photo: "/static/species/fraxinus_ornus.jpg",
+          family: "Oleaceae",
+          common: "Flowering Ash",
+          arabic: "الدردار المزهِر / الرماد المزهِر",
+          habitat:
+            "Mixed deciduous and oak woodland on moist, shaded slopes, 600–1,600 m. One of the few ash species with showy white flowers.",
+        },
+        "Juniperus drupacea": {
+          photo: "/static/species/juniperus_drupacea.jpg",
+          family: "Cupressaceae",
+          common: "Syrian Juniper",
+          arabic: "العرعر السوري",
+          habitat:
+            "Sub-alpine rocky slopes and cedar forest margins, 1,200–2,000 m. Produces unusually large, fleshy cones. Rare and threatened.",
+        },
+        "Juniperus excelsa": {
+          photo: "/static/species/juniperus_excelsa.jpg",
+          family: "Cupressaceae",
+          common: "Greek Juniper",
+          arabic: "العرعر الشامخ",
+          habitat:
+            "High mountain ridges and rocky outcrops, 1,400–2,200 m. One of the hardiest trees in Lebanon; often found with Cedrus libani.",
+        },
+        "Laurus nobilis": {
+          photo: "/static/species/laurus_nobilis.jpg",
+          family: "Lauraceae",
+          common: "Bay Laurel",
+          arabic: "الغار / الرند",
+          habitat:
+            "Humid ravines, stream banks, and shaded valleys, 0–800 m. Leaves used in Lebanese and Mediterranean cooking.",
+        },
+        "Malus trilobata": {
+          photo: "/static/species/malus_trilobata.jpg",
+          family: "Rosaceae",
+          common: "Three-lobed Apple",
+          arabic: "التفاح ثلاثي الفصوص",
+          habitat:
+            "Forest edges and rocky slopes at 600–1,400 m. Rare in Lebanon; distinctive for its deeply three-lobed leaves.",
+        },
+        "Pinus pinea": {
+          photo: "/static/species/pinus_pinea.jpg",
+          family: "Pinaceae",
+          common: "Stone Pine",
+          arabic: "الصنوبر الحجري",
+          habitat:
+            "Coastal plains and hills, 0–700 m. Planted widely for its edible pine nuts (snawbar). Umbrella-shaped crown is iconic in Lebanese landscapes.",
+        },
+        "Pyrus syriaca": {
+          photo: "/static/species/pyrus_syriaca.jpg",
+          family: "Rosaceae",
+          common: "Syrian Pear",
+          arabic: "الإجاص السوري",
+          habitat:
+            "Open woodland and rocky slopes, 500–1,400 m. Small wild pear endemic to the Levant; fruits are small and astringent.",
+        },
+        "Quercus cedrorum": {
+          photo: "/static/species/quercus_cedrorum.jpg",
+          family: "Fagaceae",
+          common: "Cedar Oak",
+          arabic: "بلوط الأرز",
+          habitat:
+            "High-elevation mixed forests alongside cedar, 1,200–1,900 m. One of Lebanon's least-studied oaks; adapted to cold winters.",
+        },
+        "Quercus cerris": {
+          photo: "/static/species/quercus_cerris.jpg",
+          family: "Fagaceae",
+          common: "Turkey Oak",
+          arabic: "البلوط التركي",
+          habitat:
+            "Mixed deciduous forests on well-drained soils, 400–1,400 m. Produces acorns with distinctively mossy cups.",
+        },
+        "Quercus coccifera calliprinos": {
+          photo: "/static/species/quercus_coccifera_calliprinos.jpg",
+          family: "Fagaceae",
+          common: "Kermes Oak",
+          arabic: "السنديان الفلسطيني / البلوط الأخضر",
+          habitat:
+            "Dominant shrub and tree of Lebanese maquis, 0–1,600 m. Evergreen, spiny leaves; extremely fire-adapted. The most common oak in Lebanon.",
+        },
+        "Quercus infectoria boissieri": {
+          photo: "/static/species/quercus_infectoria_boissieri.jpg",
+          family: "Fagaceae",
+          common: "Aleppo Oak",
+          arabic: "البلوط العفصي",
+          habitat:
+            "Deciduous woodland on limestone at 600–1,400 m. Galls (عفص) were historically used in tanning and ink-making.",
+        },
+        "Quercus ithaburensis": {
+          photo: "/static/species/quercus_ithaburensis.jpg",
+          family: "Fagaceae",
+          common: "Tabor Oak",
+          arabic: "بلوط جبل الطور",
+          habitat:
+            "Lower elevation deciduous woodland, 100–800 m. Large acorns; associated with ancient sacred groves in the Levant.",
+        },
+        "Quercus kotschyana": {
+          photo: "/static/species/quercus_kotschyana.jpg",
+          family: "Fagaceae",
+          common: "Kotschyi Oak",
+          arabic: "بلوط كوتشي",
+          habitat:
+            "Mountain oak forests at 900–1,800 m. Semi-deciduous; hybridizes with other Quercus species in Lebanon's complex oak zones.",
+        },
+        "Quercus look": {
+          photo: "/static/species/quercus_look.jpg",
+          family: "Fagaceae",
+          common: "Look Oak",
+          arabic: "بلوط لوك",
+          habitat:
+            "Coastal and sub-coastal hills on calcareous soils, 0–600 m. Semi-evergreen; rare in Lebanon, more common further south.",
+        },
+        "Sorbus torminalis": {
+          photo: "/static/species/sorbus_torminalis.jpg",
+          family: "Rosaceae",
+          common: "Wild Service Tree",
+          arabic: "الغبيراء البرية / زعرور",
+          habitat:
+            "Mixed deciduous forests on moist, shaded slopes at 700–1,600 m. Fruits used historically for treating colic.",
+        },
+        "Styrax officinalis": {
+          photo: "/static/species/styrax_officinalis.jpg",
+          family: "Styracaceae",
+          common: "Storax",
+          arabic: "اللبنى / الستيراكس الطبي",
+          habitat:
+            "Maquis, garrigue, and light woodland at 200–1,000 m. Produces fragrant resin used since antiquity in perfumes and medicine.",
+        },
+      };
+
+      /* ══════════════════════════════════════════════════════
+         CITY COORDINATES  (lat/lon for Leaflet map)
+      ══════════════════════════════════════════════════════ */
+      const CITY_COORDS = {
+        Beirut: { lat: 33.8938, lon: 35.5018 },
+        Tripoli: { lat: 34.4367, lon: 35.8497 },
+        Sidon: { lat: 33.5632, lon: 35.3711 },
+        Tyre: { lat: 33.2705, lon: 35.2038 },
+        Zahle: { lat: 33.8497, lon: 35.902 },
+        Bcharre: { lat: 34.25, lon: 36.0167 },
+        Baalbek: { lat: 34.004, lon: 36.211 },
+        Jounieh: { lat: 33.9806, lon: 35.6178 },
+        Jbeil: { lat: 34.1236, lon: 35.6519 },
+        Faraya: { lat: 34.0, lon: 35.9167 },
+        Aley: { lat: 33.8069, lon: 35.5983 },
+        Bhamdoun: { lat: 33.7833, lon: 35.6667 },
+        Chouf: { lat: 33.65, lon: 35.55 },
+        "Cedars of God": { lat: 34.2431, lon: 36.0539 },
+        "Deir el Ahmar": { lat: 34.0333, lon: 36.1167 },
+        Hermel: { lat: 34.3929, lon: 36.3864 },
+        Nabatieh: { lat: 33.3778, lon: 35.4839 },
+        Jezzine: { lat: 33.5436, lon: 35.5822 },
+        Broumana: { lat: 33.8833, lon: 35.65 },
+        Rachaya: { lat: 33.4953, lon: 35.8406 },
+        Marjayoun: { lat: 33.3614, lon: 35.59 },
+        Hasbaya: { lat: 33.3997, lon: 35.6836 },
+        Akkar: { lat: 34.55, lon: 36.1667 },
+        Zgharta: { lat: 34.3989, lon: 35.8933 },
+        Ehden: { lat: 34.3, lon: 35.9833 },
+        "Beit Mery": { lat: 33.8667, lon: 35.6167 },
+        Aintoura: { lat: 33.95, lon: 35.65 },
+        Kfardebian: { lat: 34.05, lon: 35.8833 },
+        Laklouk: { lat: 34.0833, lon: 35.95 },
+        Tannourine: { lat: 34.15, lon: 35.9167 },
+        Laqlouq: { lat: 34.0833, lon: 35.95 },
+        Qartaba: { lat: 34.0833, lon: 35.8167 },
+        Jaj: { lat: 34.1667, lon: 35.9 },
+        Yammouneh: { lat: 34.0833, lon: 36.1333 },
+        Arsaal: { lat: 34.1833, lon: 36.4167 },
+        Aanjar: { lat: 33.7333, lon: 35.9333 },
+        Chtaura: { lat: 33.8167, lon: 35.8667 },
+        Qaraoun: { lat: 33.5667, lon: 35.6833 },
+        Joun: { lat: 33.5167, lon: 35.55 },
+        "Deir Mimas": { lat: 33.4, lon: 35.5333 },
+        "Tyre Coast": { lat: 33.25, lon: 35.2167 },
+        Naqoura: { lat: 33.1167, lon: 35.1333 },
+        "Bint Jbeil": { lat: 33.1167, lon: 35.4333 },
+        Saghbine: { lat: 33.55, lon: 35.7167 },
+        Kefraya: { lat: 33.7333, lon: 35.9 },
+      };
+
+      /* ══════════════════════════════════════════════════════
+         HELPERS
+      ══════════════════════════════════════════════════════ */
+      let allCities = [];
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+      function getSuitabilityClass(p) {
+        return p >= 0.65 ? "high" : p >= 0.35 ? "mod" : "low";
+      }
+      function getSuitabilityLabel(p) {
+        return p >= 0.65
+          ? "Highly suitable"
+          : p >= 0.35
+            ? "Moderately suitable"
+            : "Low / not suitable";
+      }
+      function getBarColor(p) {
+        return p >= 0.5 ? "#2d7a4f" : p >= 0.35 ? "#c8892a" : "#c87272";
+      }
+      function getMapColor(p) {
+        return p >= 0.65 ? "#2d7a4f" : p >= 0.35 ? "#c8892a" : "#b94040";
+      }
+
+      /* ── Species photo card ─────────────────────────────── */
+      function updatePhotoCard(name) {
+        const meta = SPECIES_META[name] || {};
+        const img = document.getElementById("species-img");
+        const ph = document.getElementById("photo-placeholder");
+        document.getElementById("overlay-name").textContent = name;
+        document.getElementById("overlay-family").textContent = meta.family
+          ? `${meta.family} · ${meta.common || ""}`
+          : "";
+        document.getElementById("ph-letter").textContent = name ? name[0] : "—";
+        document.getElementById("ph-name").textContent = name;
+        if (meta.photo) {
+          img.src = meta.photo;
+          img.alt = name;
+          img.style.display = "block";
+          ph.style.display = "none";
+        } else {
+          img.style.display = "none";
+          ph.style.display = "flex";
+        }
+      }
+
+      /* ── Gauge SVG ──────────────────────────────────────── */
+      function buildGaugeSvg(prob) {
+        const color =
+          prob >= 0.5 ? "#2d7a4f" : prob >= 0.35 ? "#c8892a" : "#b94040";
+        const filled = Math.round(prob * 126);
+        return `<svg class="gauge-svg" width="110" height="64" viewBox="0 0 110 64">
+          <path d="M10 60 A45 45 0 0 1 100 60" fill="none" stroke="#d4eddf" stroke-width="9" stroke-linecap="round"/>
+          <path d="M10 60 A45 45 0 0 1 100 60" fill="none" stroke="${color}" stroke-width="9"
+            stroke-linecap="round" stroke-dasharray="${filled} 126"/>
+        </svg>`;
+      }
+
+      /* ── Render prediction result ───────────────────────── */
+      function renderPredResult(d, speciesName) {
+        const p = Number(d.probability);
+        const cls = getSuitabilityClass(p);
+        const isSuitable = p >= 0.5;
+        let warn = "";
+        if (d.raster_missing_at_site && d.raster_missing_at_site.length)
+          warn = `<p class="warn-banner">Missing env at site: ${d.raster_missing_at_site.join(", ")}. Imputer may fill these.</p>`;
+        document.getElementById("pred-result").innerHTML = `
+          <div class="results-grid">
+            <div class="metric-card">
+              <div class="m-label">Suitability probability</div>
+              ${buildGaugeSvg(p)}
+              <div class="m-value">${p.toFixed(3)}</div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">Suitability class</div>
+              <div style="margin:1.1rem 0 0.4rem"><span class="tag-pill tag-${cls}">${escapeHtml(d.class_label)}</span></div>
+              <div class="m-sub">${p >= 0.65 ? "Excellent habitat match" : p >= 0.35 ? "Marginal habitat conditions" : "Below habitat threshold"}</div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">Binary (threshold 0.5)</div>
+              <div style="margin:1.1rem 0 0.4rem"><span class="tag-pill tag-${isSuitable ? "high" : "low"}">${escapeHtml(d.binary_prediction)}</span></div>
+              <div class="loc-label">${escapeHtml(d.location_label)} · <em>${escapeHtml(speciesName)}</em></div>
+            </div>
+          </div>${warn}`;
+      }
+
+      /* ── Render compare table with thumbnails ───────────── */
+      function renderCompareTable(rows) {
+        let html = `<table class="results"><thead><tr><th>Species</th><th>Probability</th><th>Class</th><th>Binary</th></tr></thead><tbody>`;
+        rows.forEach((row) => {
+          const p = row.probability == null ? null : Number(row.probability);
+          const pStr = p == null ? "—" : p.toFixed(3);
+          const cls = p == null ? "low" : getSuitabilityClass(p);
+          const isSuitable = p != null && p >= 0.5;
+          const meta = SPECIES_META[row.species] || {};
+          const barColor = p == null ? "#ccc" : getBarColor(p);
+          const barW = p == null ? 0 : Math.round(p * 100);
+          const thumbHtml = meta.photo
+            ? `<img class="species-thumb" src="${escapeHtml(meta.photo)}" alt="${escapeHtml(row.species)}" onerror="this.outerHTML='<div class=\\'species-thumb-placeholder\\'>${escapeHtml(row.species[0])}</div>'">`
+            : `<div class="species-thumb-placeholder">${escapeHtml(row.species[0])}</div>`;
+          html += `<tr>
+            <td><div class="species-cell">${thumbHtml}
+              <span class="species-name-italic species-link" onclick="openSpeciesModal('${escapeHtml(row.species)}')" title="Click for species info">${escapeHtml(row.species)}</span>
+            </div></td>
+            <td><div class="prob-bar-wrap"><div class="prob-track"><div class="prob-fill" style="width:${barW}%;background:${barColor}"></div></div><span class="prob-num">${pStr}</span></div></td>
+            <td><span class="tag-pill tag-${cls}" style="font-size:0.73rem">${escapeHtml(row.class_label)}</span></td>
+            <td><span class="tag-pill tag-${isSuitable ? "high" : "low"}" style="font-size:0.73rem">${escapeHtml(row.binary)}</span></td>
+          </tr>`;
+        });
+        return html + `</tbody></table>`;
+      }
+
+      /* ── Top 5 / Bottom 5 cards ─────────────────────────── */
+      function renderTopBottom(rows, city) {
+        const valid = rows
+          .filter((r) => r.probability != null)
+          .sort((a, b) => b.probability - a.probability);
+        if (valid.length < 2) return;
+        const top5 = valid.slice(0, Math.min(5, valid.length));
+        const bottom5 = valid.slice(-Math.min(5, valid.length)).reverse();
+
+        function card(row, rank, isTop) {
+          const p = Number(row.probability);
+          const meta = SPECIES_META[row.species] || {};
+          const color = isTop ? getBarColor(p) : "#b94040";
+          return `<div class="tb-card" onclick="openSpeciesModal('${escapeHtml(row.species)}')">
+            <div class="tb-rank" style="background:${color}">${rank}</div>
+            ${meta.photo ? `<img class="tb-thumb" src="${escapeHtml(meta.photo)}" alt="" onerror="this.style.display='none'">` : ""}
+            <div class="tb-info">
+              <div class="tb-name">${escapeHtml(row.species)}</div>
+              <div class="tb-prob" style="color:${color}">${p.toFixed(3)}</div>
+            </div>
+          </div>`;
+        }
+
+        document.getElementById("top-bottom-wrap").innerHTML = `
+          <div class="tb-section">
+            <div class="tb-label tb-label-top">Top 5 most suitable in ${escapeHtml(city)}</div>
+            <div class="tb-grid">${top5.map((r, i) => card(r, i + 1, true)).join("")}</div>
+          </div>
+          <div class="tb-section" style="margin-top:1rem">
+            <div class="tb-label tb-label-bot">5 least suitable</div>
+            <div class="tb-grid">${bottom5.map((r, i) => card(r, i + 1, false)).join("")}</div>
+          </div>`;
+      }
+
+      /* ── Horizontal bar + Donut charts ──────────────────── */
+      function renderCharts(rows, city) {
+        const valid = [...rows.filter((r) => r.probability != null)].sort(
+          (a, b) => a.probability - b.probability,
+        );
+        const ys = valid.map((r) => r.species);
+        const xs = valid.map((r) => r.probability);
+        const colors = xs.map((p) => getBarColor(p));
+
+        document.getElementById("charts-grid").style.display = "grid";
+
+        // Horizontal bar
+        Plotly.newPlot(
+          "chart-horiz",
+          [
+            {
+              type: "bar",
+              orientation: "h",
+              x: xs,
+              y: ys,
+              marker: { color: colors },
+              hovertemplate: "<b>%{y}</b><br>P = %{x:.3f}<extra></extra>",
+              text: xs.map((p) => p.toFixed(2)),
+              textposition: "outside",
+              textfont: { size: 10 },
+            },
+          ],
+          {
+            title: {
+              text: `Probability by species — ${city}`,
+              font: {
+                family: "Playfair Display,Georgia,serif",
+                size: 15,
+                color: "#1a4a2e",
+              },
+            },
+            xaxis: {
+              range: [0, 1.15],
+              title: "P(suitable)",
+              gridcolor: "#eef7f2",
+              tickfont: { color: "#4a6155" },
+            },
+            yaxis: {
+              tickfont: {
+                family: "Playfair Display,Georgia,serif",
+                color: "#1a4a2e",
+                size: 10,
+              },
+              automargin: true,
+            },
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+            margin: { l: 180, r: 60, t: 50, b: 40 },
+            font: { family: "DM Sans,sans-serif" },
+          },
+          { responsive: true, displaylogo: false },
+        );
+
+        // Suitability spectrum — dot strip chart
+        const SPEC_COLORS = { "Highly suitable":"#1e5c3a", "Suitable":"#52a97a", "Moderately suitable":"#c8892a", "Low / not suitable":"#b94040" };
+        const specSorted = rows.filter(r => r.probability != null).sort((a,b) => a.probability - b.probability);
+        // pseudo-random jitter using golden-angle spread to avoid overlap
+        const jitter = specSorted.map((_, i) => Math.sin(i * 2.39996) * 0.38);
+
+        document.getElementById("chart-donut").innerHTML = "";
+        Plotly.newPlot("chart-donut", [{
+          type: "scatter",
+          mode: "markers",
+          x: specSorted.map(r => r.probability),
+          y: jitter,
+          marker: {
+            size: 12,
+            color: specSorted.map(r => SPEC_COLORS[r.class_label] || "#b94040"),
+            line: { color: "#fff", width: 1.5 },
+            opacity: 0.88,
+          },
+          text: specSorted.map(r => r.species),
+          customdata: specSorted.map(r => r.class_label || "—"),
+          hovertemplate: "<i>%{text}</i><br>P = %{x:.3f}<br>%{customdata}<extra></extra>",
+        }], {
+          title: {
+            text: `Suitability spectrum — ${city}`,
+            font: { family: "Playfair Display,Georgia,serif", size: 14, color: "#1a4a2e" },
+          },
+          shapes: [
+            { type:"rect", x0:0,    x1:0.35, y0:-0.58, y1:0.58, fillcolor:"rgba(185,64,64,0.07)",   line:{width:0} },
+            { type:"rect", x0:0.35, x1:0.65, y0:-0.58, y1:0.58, fillcolor:"rgba(200,137,42,0.07)",  line:{width:0} },
+            { type:"rect", x0:0.65, x1:1,    y0:-0.58, y1:0.58, fillcolor:"rgba(30,92,58,0.07)",    line:{width:0} },
+            { type:"line", x0:0.35, x1:0.35, y0:-0.58, y1:0.58, line:{color:"#c8892a", width:1, dash:"dot"} },
+            { type:"line", x0:0.65, x1:0.65, y0:-0.58, y1:0.58, line:{color:"#1e5c3a", width:1, dash:"dot"} },
+          ],
+          annotations: [
+            { x:0.175, y:0.54, text:"Low",             showarrow:false, font:{size:10, color:"#b94040"}, xanchor:"center" },
+            { x:0.5,   y:0.54, text:"Moderate",        showarrow:false, font:{size:10, color:"#c8892a"}, xanchor:"center" },
+            { x:0.825, y:0.54, text:"Highly suitable", showarrow:false, font:{size:10, color:"#1e5c3a"}, xanchor:"center" },
+          ],
+          xaxis: {
+            range: [-0.02, 1.02],
+            title: { text: "Suitability probability →", font: { size: 11, color: "#4a6155" } },
+            tickformat: ".1f", gridcolor: "#eef7f2",
+            tickfont: { color: "#4a6155" }, fixedrange: true,
+          },
+          yaxis: { visible: false, range: [-0.7, 0.7], fixedrange: true },
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor:  "rgba(0,0,0,0)",
+          margin: { t: 50, b: 55, l: 20, r: 20 },
+          hovermode: "closest",
+          font: { family: "DM Sans,sans-serif" },
+        }, { responsive: true, displaylogo: false });
+      }
+
+      /* ══════════════════════════════════════════════════════
+         LEAFLET MAP
+      ══════════════════════════════════════════════════════ */
+      let leafletMap = null;
+      let mapMarkers = [];
+
+      function initMap() {
+        if (leafletMap) return;
+        leafletMap = L.map("leaflet-map", { zoomControl: true }).setView(
+          [33.85, 35.85],
+          8,
+        );
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 13,
+          attribution:
+            '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+        }).addTo(leafletMap);
+      }
+
+      function clearMapMarkers() {
+        mapMarkers.forEach((m) => leafletMap.removeLayer(m));
+        mapMarkers = [];
+      }
+
+      async function buildSuitabilityMap() {
+        const species = document.getElementById("map-species").value;
+        const btn = document.getElementById("btn-map");
+        const btnTxt = document.getElementById("btn-map-text");
+        const err = document.getElementById("map-error");
+        const wrap = document.getElementById("map-wrap");
+        err.style.display = "none";
+        btnTxt.textContent = "Loading…";
+        btn.disabled = true;
+        wrap.style.display = "block";
+        initMap();
+        clearMapMarkers();
+
+        const citiesWithCoords = allCities.filter((c) => CITY_COORDS[c]);
+        if (!citiesWithCoords.length) {
+          err.textContent = "No matching city coordinates found.";
+          err.style.display = "block";
+          btnTxt.textContent = "Build suitability map";
+          btn.disabled = false;
+          return;
+        }
+
+        try {
+          const results = await Promise.all(
+            citiesWithCoords.map((city) =>
+              fetch("/api/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  city,
+                  species,
+                  use_custom_coordinates: false,
+                }),
+              })
+                .then((r) => r.json())
+                .then((d) => ({
+                  city,
+                  prob: Number(d.probability),
+                  label: d.class_label,
+                }))
+                .catch(() => ({ city, prob: null })),
+            ),
+          );
+
+          results.forEach(({ city, prob, label }) => {
+            if (prob === null) return;
+            const coords = CITY_COORDS[city];
+            const color = getMapColor(prob);
+            const radius = 7 + prob * 12;
+            const marker = L.circleMarker([coords.lat, coords.lon], {
+              radius,
+              fillColor: color,
+              color: "#fff",
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.82,
+            }).addTo(leafletMap);
+            marker.bindPopup(
+              `<div style="font-family:DM Sans,sans-serif;min-width:160px">
+                <div style="font-weight:500;margin-bottom:4px">${escapeHtml(city)}</div>
+                <div style="font-style:italic;font-size:0.82rem;color:#4a6155;margin-bottom:6px">${escapeHtml(species)}</div>
+                <div style="font-size:1.1rem;font-weight:500;color:${color}">${prob.toFixed(3)}</div>
+                <div style="font-size:0.75rem;color:#7a9485">${escapeHtml(label || "")}</div>
+              </div>`,
+            );
+            mapMarkers.push(marker);
+          });
+
+          // Fit map to markers
+          if (mapMarkers.length) {
+            const group = L.featureGroup(mapMarkers);
+            leafletMap.fitBounds(group.getBounds().pad(0.15));
+          }
+        } catch (e) {
+          err.textContent = "Map error: " + e.message;
+          err.style.display = "block";
+        }
+        btnTxt.textContent = "Rebuild map";
+        btn.disabled = false;
+      }
+
+      /* ══════════════════════════════════════════════════════
+         FEATURE IMPORTANCE
+      ══════════════════════════════════════════════════════ */
+      async function loadFeatureImportance() {
+        const wrap = document.getElementById("feat-imp-wrap");
+        try {
+          const r = await fetch("/api/feature-importance");
+          if (!r.ok) {
+            wrap.innerHTML = `<p class="warn-banner">Feature importance endpoint not available. Add <code>/api/feature-importance</code> to main.py — see README.</p>`;
+            return;
+          }
+          const d = await r.json();
+          const pairs = d.features
+            .map((f, i) => ({ f, imp: d.importances[i] }))
+            .sort((a, b) => b.imp - a.imp);
+          const top = pairs.slice(0, 20);
+          Plotly.newPlot(
+            "chart-feat-imp",
+            [
+              {
+                type: "bar",
+                orientation: "h",
+                x: top.map((p) => p.imp),
+                y: top.map((p) => p.f),
+                marker: {
+                  color: top.map((_, i) => {
+                    const t = i / top.length;
+                    return `rgb(${Math.round(45 + t * 100)},${Math.round(122 - t * 60)},${Math.round(79 - t * 30)})`;
+                  }),
+                },
+                hovertemplate:
+                  "<b>%{y}</b><br>Importance: %{x:.0f}<extra></extra>",
+              },
+            ],
+            {
+              title: {
+                text: "Top 20 feature importances (gain)",
+                font: {
+                  family: "Playfair Display,Georgia,serif",
+                  size: 15,
+                  color: "#1a4a2e",
+                },
+              },
+              xaxis: {
+                title: "Importance (gain)",
+                gridcolor: "#eef7f2",
+                tickfont: { color: "#4a6155" },
+              },
+              yaxis: {
+                tickfont: {
+                  family: "DM Sans,sans-serif",
+                  color: "#1a4a2e",
+                  size: 11,
+                },
+                automargin: true,
+              },
+              paper_bgcolor: "rgba(0,0,0,0)",
+              plot_bgcolor: "rgba(0,0,0,0)",
+              margin: { l: 220, r: 40, t: 50, b: 50 },
+              font: { family: "DM Sans,sans-serif" },
+            },
+            { responsive: true, displaylogo: false },
+          );
+        } catch (e) {
+          wrap.innerHTML = `<p class="warn-banner">Could not load feature importance. Add <code>/api/feature-importance</code> to main.py.</p>`;
+        }
+      }
+
+      /* ══════════════════════════════════════════════════════
+         SPECIES MODAL
+      ══════════════════════════════════════════════════════ */
+      function openSpeciesModal(name) {
+        const meta = SPECIES_META[name] || {};
+        const img = document.getElementById("modal-img"),
+          ph = document.getElementById("modal-ph");
+        document.getElementById("modal-arabic").textContent = meta.arabic || "";
+        document.getElementById("modal-sci").textContent = name;
+        document.getElementById("modal-common").textContent = meta.common || "";
+        document.getElementById("modal-family-pill").textContent =
+          meta.family || "";
+        document.getElementById("modal-habitat").textContent =
+          meta.habitat || "No habitat description available.";
+        const wikiName =
+          SPECIES_META[name] && SPECIES_META[name].wikiTitle
+            ? SPECIES_META[name].wikiTitle
+            : name.split(" ").slice(0, 2).join("_");
+        document.getElementById("modal-wiki").href =
+          "https://en.wikipedia.org/wiki/" + encodeURIComponent(wikiName);
+        if (meta.photo) {
+          img.src = meta.photo;
+          img.alt = name;
+          img.style.display = "block";
+          ph.style.display = "none";
+        } else {
+          img.style.display = "none";
+          document.getElementById("modal-ph-letter").textContent = name[0];
+          ph.style.display = "flex";
+        }
+        document.getElementById("species-modal-overlay").style.display =
+          "block";
+        document.getElementById("species-modal").style.display = "flex";
+        document.body.style.overflow = "hidden";
+      }
+      function closeModal() {
+        document.getElementById("species-modal-overlay").style.display = "none";
+        document.getElementById("species-modal").style.display = "none";
+        document.body.style.overflow = "";
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
+      });
+
+      /* ══════════════════════════════════════════════════════
+         LOAD META
+      ══════════════════════════════════════════════════════ */
+      async function loadMeta() {
+        const box = document.getElementById("api-status");
+        try {
+          const r = await fetch("/api/meta");
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.detail || "Failed to load /api/meta");
+
+          allCities = data.cities || [];
+          allCities = data.cities || [];
+          ["city", "comp_city"].forEach((id) => {
+            repopulateCustomSelect(document.getElementById(id), allCities);
+          });
+
+          const allSpecies = data.species || [];
+          ["species", "map-species"].forEach((id) => {
+            repopulateCustomSelect(document.getElementById(id), allSpecies);
+          });
+
+          if (!allSpecies.length) {
+            box.textContent = data.model_error || "No species loaded.";
+            box.classList.add("alert");
+            return;
+          }
+          box.classList.remove("alert");
+          box.textContent = data.model_ready
+            ? `Model loaded. Raster BIO layers detected (default paths): ${data.raster_bio_count}/19.`
+            : `Model failed: ${data.model_error || "unknown error"}`;
+          if (!data.model_ready) box.classList.add("alert");
+          if (allSpecies.length) updatePhotoCard(allSpecies[0]);
+        } catch (e) {
+          box.textContent = "Could not reach API: " + e;
+          box.classList.add("alert");
+        }
+      }
+
+      /* ══════════════════════════════════════════════════════
+         EVENT LISTENERS
+      ══════════════════════════════════════════════════════ */
+      document.getElementById("use_custom").addEventListener("change", () => {
+        document.getElementById("custom_coords").style.display =
+          document.getElementById("use_custom").checked ? "block" : "none";
+      });
+      document
+        .getElementById("species")
+        .addEventListener("change", (e) => updatePhotoCard(e.target.value));
+      document
+        .getElementById("btn-map")
+        .addEventListener("click", buildSuitabilityMap);
+
+      document
+        .getElementById("btn-predict")
+        .addEventListener("click", async () => {
+          const err = document.getElementById("pred-error"),
+            out = document.getElementById("pred-result");
+          err.style.display = "none";
+          out.innerHTML = "";
+          const useCustom = document.getElementById("use_custom").checked;
+          const speciesName = document.getElementById("species").value;
+          const body = {
+            city: document.getElementById("city").value,
+            species: speciesName,
+            use_custom_coordinates: useCustom,
+            latitude: useCustom
+              ? parseFloat(document.getElementById("lat").value)
+              : null,
+            longitude: useCustom
+              ? parseFloat(document.getElementById("lon").value)
+              : null,
+          };
+          if (body.latitude !== null && Number.isNaN(body.latitude))
+            delete body.latitude;
+          if (body.longitude !== null && Number.isNaN(body.longitude))
+            delete body.longitude;
+          try {
+            const r = await fetch("/api/predict", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const d = await r.json();
+            if (!r.ok)
+              throw new Error(
+                typeof d.detail === "string"
+                  ? d.detail
+                  : JSON.stringify(d.detail),
+              );
+            renderPredResult(d, speciesName);
+          } catch (e) {
+            err.textContent = String(e.message || e);
+            err.style.display = "block";
+          }
+        });
+
+      document
+        .getElementById("btn-compare")
+        .addEventListener("click", async () => {
+          const err = document.getElementById("compare-error");
+          const tw = document.getElementById("compare-table-wrap");
+          err.style.display = "none";
+          tw.innerHTML = "";
+          document.getElementById("top-bottom-wrap").innerHTML = "";
+          document.getElementById("charts-grid").style.display = "none";
+          const city = document.getElementById("comp_city").value;
+          try {
+            const r = await fetch("/api/compare", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ city }),
+            });
+            const d = await r.json();
+            if (!r.ok)
+              throw new Error(
+                typeof d.detail === "string"
+                  ? d.detail
+                  : JSON.stringify(d.detail),
+              );
+            const rows = d.species_rows || [];
+            renderTopBottom(rows, city);
+            let tableHtml = renderCompareTable(rows);
+            if (d.raster_missing_at_site && d.raster_missing_at_site.length)
+              tableHtml += `<p class="warn-banner">Missing/nodata: ${d.raster_missing_at_site.join(", ")}</p>`;
+            tw.innerHTML = tableHtml;
+            renderCharts(rows, city);
+          } catch (e) {
+            err.textContent = String(e.message || e);
+            err.style.display = "block";
+          }
+        });
+
+      /* ══════════════════════════════════════════════════════
+         CUSTOM SELECT COMPONENT
+         Replaces native <select> with a styled dropdown panel
+         positioned just below the trigger button.
+      ══════════════════════════════════════════════════════ */
+      const CHEVRON = `<svg width="11" height="7" viewBox="0 0 11 7" fill="none">
+        <path d="M1 1l4.5 4.5L10 1" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+      // Close all open panels
+      document.addEventListener("click", () => {
+        document
+          .querySelectorAll(".cs-panel.cs-open")
+          .forEach((p) => p.classList.remove("cs-open"));
+        document
+          .querySelectorAll(".cs-trigger.cs-open")
+          .forEach((t) => t.classList.remove("cs-open"));
+      });
+
+      function buildCustomSelect(sel) {
+        if (sel._csBuilt) return;
+        sel._csBuilt = true;
+        sel.style.display = "none";
+
+        const wrap = document.createElement("div");
+        wrap.className = "cs-wrap";
+        sel.parentNode.insertBefore(wrap, sel);
+        wrap.appendChild(sel);
+
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "cs-trigger";
+        trigger.innerHTML = `<span class="cs-label"></span><span class="cs-arrow">${CHEVRON}</span>`;
+
+        const panel = document.createElement("div");
+        panel.className = "cs-panel";
+
+        wrap.appendChild(trigger);
+        wrap.appendChild(panel);
+
+        sel._csTrigger = trigger;
+        sel._csPanel = panel;
+
+        trigger.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isOpen = panel.classList.contains("cs-open");
+          // close all others first
+          document
+            .querySelectorAll(".cs-panel.cs-open")
+            .forEach((p) => p.classList.remove("cs-open"));
+          document
+            .querySelectorAll(".cs-trigger.cs-open")
+            .forEach((t) => t.classList.remove("cs-open"));
+          if (!isOpen) {
+            panel.classList.add("cs-open");
+            trigger.classList.add("cs-open");
+          }
+        });
+
+        refreshCustomSelect(sel);
+      }
+
+      function refreshCustomSelect(sel) {
+        if (!sel._csBuilt || !sel._csPanel) return;
+        const panel = sel._csPanel;
+        const trigger = sel._csTrigger;
+        const label = trigger.querySelector(".cs-label");
+
+        // Rebuild option list
+        panel.innerHTML = "";
+        Array.from(sel.options).forEach((opt, i) => {
+          const item = document.createElement("div");
+          item.className =
+            "cs-option" + (i === sel.selectedIndex ? " cs-sel" : "");
+          item.textContent = opt.text;
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            sel.selectedIndex = i;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            panel
+              .querySelectorAll(".cs-option")
+              .forEach((el) => el.classList.remove("cs-sel"));
+            item.classList.add("cs-sel");
+            label.textContent = opt.text;
+            panel.classList.remove("cs-open");
+            trigger.classList.remove("cs-open");
+          });
+          panel.appendChild(item);
+        });
+
+        // Update label
+        const cur = sel.options[sel.selectedIndex];
+        label.textContent = cur ? cur.text : "—";
+      }
+
+      function initAllCustomSelects() {
+        document.querySelectorAll("select").forEach(buildCustomSelect);
+      }
+
+      // Call after any select is programmatically repopulated
+      function repopulateCustomSelect(sel, options) {
+        sel.innerHTML = "";
+        options.forEach((o) => sel.appendChild(new Option(o, o)));
+        if (!sel._csBuilt) buildCustomSelect(sel);
+        else refreshCustomSelect(sel);
+      }
+
+      initAllCustomSelects();
+      loadMeta();
+      loadFeatureImportance();
+    </script>
+  </body>
+</html>
